@@ -1,4 +1,4 @@
-package godwarf
+package gort
 
 import (
 	"errors"
