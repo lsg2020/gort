@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"reflect"
 
@@ -47,14 +48,27 @@ func main() {
 	log.Printf("load  main.testGlobal %#v", rGlobal.Interface())
 
 	// test func
-	args := make([]reflect.Value, 0)
-	args = append(args, reflect.ValueOf(&testGlobal))
-	args = append(args, reflect.ValueOf("test call method:%d %s\n"))
-	args = append(args, reflect.ValueOf(1234))
-	args = append(args, reflect.ValueOf("hello"))
-	_, err = rt.CallFunc("main.(*testStruct).Print", true, args)
+	fmt.Printf("test call fmt.Printf\n")
+
+	_, err = rt.CallFunc("fmt.Printf", true, []reflect.Value{
+		reflect.ValueOf("test call fmt.Printf:%d %s\n"),
+		reflect.ValueOf(1234),
+		reflect.ValueOf("hello"),
+	})
 	if err != nil {
 		log.Fatalf("test call err %s\n", err)
 		return
 	}
+
+	_, err = rt.CallFunc("main.(*testStruct).Print", true, []reflect.Value{
+		reflect.ValueOf(&testGlobal),
+		reflect.ValueOf("test call method:%d %s\n"),
+		reflect.ValueOf(1234),
+		reflect.ValueOf("hello"),
+	})
+	if err != nil {
+		log.Fatalf("test call err %s\n", err)
+		return
+	}
+
 }
