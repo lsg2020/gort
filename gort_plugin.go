@@ -10,17 +10,7 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-const (
-	maxNumLibraries      = 1000000 // maximum number of loaded libraries, to avoid loading forever on corrupted memory
-	maxLibraryPathLength = 1000000 // maximum length for the path of a library, to avoid loading forever on corrupted memory
-)
-
-const (
-	_DT_NULL  = 0  // DT_NULL as defined by SysV ABI specification
-	_DT_DEBUG = 21 // DT_DEBUG as defined by SysV ABI specification
-)
-
-func (d *Dwarf) SearchPluginByName(name string) (string, uint64, error) {
+func (d *DwarfRT) SearchPluginByName(name string) (string, uint64, error) {
 	libs, addr, err := d.SearchPlugins()
 	if err != nil {
 		return "", 0, err
@@ -33,7 +23,7 @@ func (d *Dwarf) SearchPluginByName(name string) (string, uint64, error) {
 	return "", 0, ErrNotFound
 }
 
-func (d *Dwarf) SearchPlugins() ([]string, []uint64, error) {
+func (d *DwarfRT) SearchPlugins() ([]string, []uint64, error) {
 	if err := d.check(); err != nil {
 		return nil, nil, err
 	}
@@ -83,6 +73,16 @@ func (d *Dwarf) SearchPlugins() ([]string, []uint64, error) {
 
 	return libs, addr, nil
 }
+
+const (
+	maxNumLibraries      = 1000000 // maximum number of loaded libraries, to avoid loading forever on corrupted memory
+	maxLibraryPathLength = 1000000 // maximum length for the path of a library, to avoid loading forever on corrupted memory
+)
+
+const (
+	_DT_NULL  = 0  // DT_NULL as defined by SysV ABI specification
+	_DT_DEBUG = 21 // DT_DEBUG as defined by SysV ABI specification
+)
 
 func readPtr(bi *proc.BinaryInfo, addr uint64) (uint64, error) {
 	ptrbuf := entryAddress(uintptr(addr), bi.Arch.PtrSize())

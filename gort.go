@@ -16,11 +16,11 @@ var (
 	ErrTooManyLibraries = errors.New("number of loaded libraries exceeds maximum")
 )
 
-func NewDwarf(path string) (*Dwarf, error) {
-	return (&Dwarf{}).init(path)
+func NewDwarfRT(path string) (*DwarfRT, error) {
+	return (&DwarfRT{}).init(path)
 }
 
-type Dwarf struct {
+type DwarfRT struct {
 	bi *proc.BinaryInfo
 
 	mds             []moduleData
@@ -28,7 +28,7 @@ type Dwarf struct {
 	imageCacheTypes map[*proc.Image]map[string]uint64
 }
 
-func (d *Dwarf) init(path string) (*Dwarf, error) {
+func (d *DwarfRT) init(path string) (*DwarfRT, error) {
 	var err error
 	if path == "" {
 		if path, err = os.Executable(); err != nil {
@@ -49,7 +49,7 @@ func (d *Dwarf) init(path string) (*Dwarf, error) {
 	return d, nil
 }
 
-func (d *Dwarf) AddImage(path string, addr uint64) error {
+func (d *DwarfRT) AddImage(path string, addr uint64) error {
 	if err := d.check(); err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func (d *Dwarf) AddImage(path string, addr uint64) error {
 	return d.refreshModule()
 }
 
-func (d *Dwarf) refreshModule() error {
+func (d *DwarfRT) refreshModule() error {
 	mds, err := loadModuleData(d.bi, new(localMemory))
 	if err != nil {
 		return err
@@ -70,13 +70,13 @@ func (d *Dwarf) refreshModule() error {
 	return nil
 }
 
-func (d *Dwarf) check() error {
+func (d *DwarfRT) check() error {
 	if d.bi == nil {
 		return ErrNeedInit
 	}
 	return nil
 }
 
-func (d *Dwarf) BI() *proc.BinaryInfo {
+func (d *DwarfRT) BI() *proc.BinaryInfo {
 	return d.bi
 }

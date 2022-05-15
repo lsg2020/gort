@@ -9,7 +9,124 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-func (d *Dwarf) findFunc(name string) (*proc.Function, error) {
+func (d *DwarfRT) ForeachFunc(f func(name string, pc uint64)) error {
+	if err := d.check(); err != nil {
+		return err
+	}
+
+	for _, function := range d.bi.Functions {
+		if function.Entry != 0 {
+			f(function.Name, function.Entry)
+		}
+	}
+	return nil
+}
+
+func (d *DwarfRT) FindFuncEntry(name string) (*proc.Function, error) {
+	if err := d.check(); err != nil {
+		return nil, err
+	}
+
+	f, err := d.findFunc(name)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func (d *DwarfRT) FindFuncPc(name string) (uint64, error) {
+	if err := d.check(); err != nil {
+		return 0, err
+	}
+
+	f, err := d.findFunc(name)
+	if err != nil {
+		return 0, err
+	}
+	return f.Entry, nil
+}
+
+func (d *DwarfRT) FindFuncType(name string, variadic bool) (reflect.Type, error) {
+	if err := d.check(); err != nil {
+		return nil, err
+	}
+
+	f, err := d.findFunc(name)
+	if err != nil {
+		return nil, err
+	}
+	inTyps, outTyps, _, _, err := d.getFunctionArgTypes(f)
+	if err != nil {
+		return nil, err
+	}
+
+	ftyp := reflect.FuncOf(inTyps, outTyps, variadic)
+	return ftyp, nil
+}
+
+func (d *DwarfRT) FindFunc(name string, variadic bool) (reflect.Value, error) {
+	pc, err := d.FindFuncPc(name)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+	ftyp, err := d.FindFuncType(name, variadic)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+
+	newFunc := CreateFuncForCodePtr(ftyp, pc)
+	return newFunc, nil
+}
+
+func (d *DwarfRT) CallFunc(name string, variadic bool, args []reflect.Value) ([]reflect.Value, error) {
+	if err := d.check(); err != nil {
+		return nil, err
+	}
+	f, err := d.findFunc(name)
+	if err != nil {
+		return nil, err
+	}
+
+	inTyps, outTyps, inNames, _, err := d.getFunctionArgTypes(f)
+	if err != nil {
+		return nil, err
+	}
+
+	ftyp := reflect.FuncOf(inTyps, outTyps, variadic)
+	newFunc := CreateFuncForCodePtr(ftyp, f.Entry)
+
+	getInTyp := func(i int) (reflect.Type, string) {
+		if len(inTyps) <= 0 {
+			return nil, ""
+		}
+		if i < len(inTyps)-1 {
+			return inTyps[i], inNames[i]
+		}
+		if variadic {
+			return inTyps[len(inTyps)-1].Elem(), inNames[len(inNames)-1]
+		}
+		if i < len(inTyps) {
+			return inTyps[i], inNames[i]
+		}
+		return nil, ""
+	}
+
+	for i, arg := range args {
+		inTyp, inName := getInTyp(i)
+		if inTyp == nil {
+			return nil, fmt.Errorf("len mismatch %d", i)
+		}
+
+		if !arg.Type().AssignableTo(inTyp) {
+			return nil, fmt.Errorf("type mismatch %d:%s", i, inName)
+		}
+	}
+
+	out := newFunc.Call(args)
+	return out, nil
+}
+
+func (d *DwarfRT) findFunc(name string) (*proc.Function, error) {
 	for i := len(d.bi.Functions) - 1; i >= 0; i-- {
 		if d.bi.Functions[i].Name == name {
 			if d.bi.Functions[i].Entry != 0 {
@@ -21,7 +138,7 @@ func (d *Dwarf) findFunc(name string) (*proc.Function, error) {
 	return nil, ErrNotFound
 }
 
-func (d *Dwarf) getFunctionArgTypes(f *proc.Function) ([]reflect.Type, []reflect.Type, []string, []string, error) {
+func (d *DwarfRT) getFunctionArgTypes(f *proc.Function) ([]reflect.Type, []reflect.Type, []string, []string, error) {
 	rOffset := reflect.ValueOf(f).Elem().FieldByName("offset")
 	rCU := reflect.ValueOf(f).Elem().FieldByName("cu")
 	if !rOffset.IsValid() || !rCU.IsValid() {
@@ -35,8 +152,9 @@ func (d *Dwarf) getFunctionArgTypes(f *proc.Function) ([]reflect.Type, []reflect
 	if !rDwarf.IsValid() {
 		return nil, nil, nil, nil, ErrNotSupport
 	}
-	image := reflect.NewAt(rImage.Type().Elem(), unsafe.Pointer(rImage.Elem().UnsafeAddr())).Interface().(*proc.Image)
-	dwarfData := reflect.NewAt(rDwarf.Type().Elem(), unsafe.Pointer(rDwarf.Elem().UnsafeAddr())).Interface().(*dwarf.Data)
+	image := (*proc.Image)(unsafe.Pointer(rImage.Pointer()))
+	dwarfData := (*dwarf.Data)(unsafe.Pointer(rDwarf.Pointer()))
+
 	reader := image.DwarfReader()
 	reader.Seek(dwarf.Offset(rOffset.Uint()))
 	entry, err := reader.Next()
@@ -85,125 +203,4 @@ func (d *Dwarf) getFunctionArgTypes(f *proc.Function) ([]reflect.Type, []reflect
 		}
 	}
 	return inTyps, outTyps, inNames, outNames, nil
-}
-
-func (d *Dwarf) ForeachFunc(f func(name string, pc uint64)) error {
-	if err := d.check(); err != nil {
-		return err
-	}
-
-	for _, function := range d.bi.Functions {
-		if function.Entry != 0 {
-			f(function.Name, function.Entry)
-		}
-	}
-	return nil
-}
-
-func (d *Dwarf) FindFuncEntry(name string) (*proc.Function, error) {
-	if err := d.check(); err != nil {
-		return nil, err
-	}
-
-	f, err := d.findFunc(name)
-	if err != nil {
-		return nil, err
-	}
-	return f, nil
-}
-
-func (d *Dwarf) FindFuncPc(name string) (uint64, error) {
-	if err := d.check(); err != nil {
-		return 0, err
-	}
-
-	f, err := d.findFunc(name)
-	if err != nil {
-		return 0, err
-	}
-	return f.Entry, nil
-}
-
-func (d *Dwarf) FindFuncType(name string, variadic bool) (reflect.Type, error) {
-	if err := d.check(); err != nil {
-		return nil, err
-	}
-
-	f, err := d.findFunc(name)
-	if err != nil {
-		return nil, err
-	}
-	inTyps, outTyps, _, _, err := d.getFunctionArgTypes(f)
-	if err != nil {
-		return nil, err
-	}
-
-	ftyp := reflect.FuncOf(inTyps, outTyps, variadic)
-	return ftyp, nil
-}
-
-func (d *Dwarf) FindFunc(name string, variadic bool) (reflect.Value, error) {
-	pc, err := d.FindFuncPc(name)
-	if err != nil {
-		return reflect.Value{}, err
-	}
-	ftyp, err := d.FindFuncType(name, variadic)
-	if err != nil {
-		return reflect.Value{}, err
-	}
-
-	newFunc := reflect.MakeFunc(ftyp, nil)
-	funcPtrVal := reflect.ValueOf(newFunc).FieldByName("ptr").Pointer()
-	funcPtr := (*Func)(unsafe.Pointer(funcPtrVal))
-	funcPtr.codePtr = uintptr(pc)
-
-	return newFunc, nil
-}
-
-func (d *Dwarf) CallFunc(name string, variadic bool, args []reflect.Value) ([]reflect.Value, error) {
-	if err := d.check(); err != nil {
-		return nil, err
-	}
-	f, err := d.findFunc(name)
-	if err != nil {
-		return nil, err
-	}
-
-	inTyps, outTyps, inNames, _, err := d.getFunctionArgTypes(f)
-	if err != nil {
-		return nil, err
-	}
-
-	ftyp := reflect.FuncOf(inTyps, outTyps, variadic)
-	newFunc := reflect.MakeFunc(ftyp, nil)
-	funcPtrVal := reflect.ValueOf(newFunc).FieldByName("ptr").Pointer()
-	funcPtr := (*Func)(unsafe.Pointer(funcPtrVal))
-	funcPtr.codePtr = uintptr(f.Entry)
-
-	getInTyp := func(i int) (reflect.Type, string) {
-		if len(inTyps) <= 0 {
-			return nil, ""
-		}
-		if i < len(inTyps) {
-			return inTyps[i], inNames[i]
-		}
-		if variadic {
-			return inTyps[len(inTyps)-1], inNames[len(inNames)-1]
-		}
-		return nil, ""
-	}
-
-	for i, arg := range args {
-		inTyp, inName := getInTyp(i)
-		if inTyp == nil {
-			return nil, fmt.Errorf("len mismatch %d", i)
-		}
-
-		if !arg.Type().AssignableTo(inTyp) {
-			return nil, fmt.Errorf("type mismatch %d:%s", i, inName)
-		}
-	}
-
-	out := newFunc.Call(args)
-	return out, nil
 }

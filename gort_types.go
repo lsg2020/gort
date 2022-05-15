@@ -10,7 +10,7 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-func (d *Dwarf) ForeachType(f func(name string)) error {
+func (d *DwarfRT) ForeachType(f func(name string)) error {
 	if err := d.check(); err != nil {
 		return err
 	}
@@ -25,7 +25,7 @@ func (d *Dwarf) ForeachType(f func(name string)) error {
 	return nil
 }
 
-func (d *Dwarf) FindType(name string) (reflect.Type, error) {
+func (d *DwarfRT) FindType(name string) (reflect.Type, error) {
 	if err := d.check(); err != nil {
 		return nil, err
 	}
@@ -40,11 +40,11 @@ func (d *Dwarf) FindType(name string) (reflect.Type, error) {
 		return nil, err
 	}
 
-	typ := reflect.TypeOf(makeInterface(unsafe.Pointer(uintptr(typeAddr)), nil))
+	typ := reflect.TypeOf(*(*interface{})(unsafe.Pointer(&typeAddr)))
 	return typ, nil
 }
 
-func (d *Dwarf) findImageType(img *proc.Image, name string) uint64 {
+func (d *DwarfRT) findImageType(img *proc.Image, name string) uint64 {
 	if d.imageCacheTypes == nil {
 		d.imageCacheTypes = make(map[*proc.Image]map[string]uint64)
 	}
@@ -91,15 +91,15 @@ func (d *Dwarf) findImageType(img *proc.Image, name string) uint64 {
 	return cache[name]
 }
 
-func (d *Dwarf) dwarfToRuntimeType(typ godwarf.Type, name string) (typeAddr uint64, err error) {
+func (d *DwarfRT) dwarfToRuntimeType(typ godwarf.Type, name string) (typeAddr uint64, err error) {
 	bi := d.bi
 	mds := d.mds
 
 	if typ.Common().Index >= len(bi.Images) {
 		return 0, fmt.Errorf("could not find image for type %s", name)
 	}
-	so := bi.Images[typ.Common().Index]
-	rdr := so.DwarfReader()
+	img := bi.Images[typ.Common().Index]
+	rdr := img.DwarfReader()
 	rdr.Seek(typ.Common().Offset)
 	e, err := rdr.Next()
 	if err != nil {
@@ -123,7 +123,7 @@ func (d *Dwarf) dwarfToRuntimeType(typ godwarf.Type, name string) (typeAddr uint
 		return 0, fmt.Errorf("could not find runtime type for type:%s", name)
 	}
 
-	md := imageToModuleData(bi, so, mds)
+	md := imageToModuleData(bi, img, mds)
 	if md == nil {
 		return 0, fmt.Errorf("could not find module data for type %s", name)
 	}

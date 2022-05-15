@@ -8,7 +8,36 @@ import (
 	"github.com/go-delve/delve/pkg/proc"
 )
 
-func (d *Dwarf) loadGlobals() {
+func (d *DwarfRT) ForeachGlobal(f func(name string, v reflect.Value)) error {
+	if err := d.check(); err != nil {
+		return err
+	}
+	if d.globals == nil {
+		d.loadGlobals()
+	}
+
+	for name, v := range d.globals {
+		f(name, v)
+	}
+	return nil
+}
+
+func (d *DwarfRT) FindGlobal(name string) (reflect.Value, error) {
+	if err := d.check(); err != nil {
+		return reflect.Value{}, err
+	}
+	if d.globals == nil {
+		d.loadGlobals()
+	}
+
+	v, ok := d.globals[name]
+	if !ok {
+		return reflect.Value{}, ErrNotFound
+	}
+	return v, nil
+}
+
+func (d *DwarfRT) loadGlobals() {
 	d.globals = make(map[string]reflect.Value)
 
 	packageVars := reflect.ValueOf(d.bi).Elem().FieldByName("packageVars")
@@ -30,8 +59,9 @@ func (d *Dwarf) loadGlobals() {
 			if !rDwarf.IsValid() {
 				continue
 			}
-			image := reflect.NewAt(rImage.Type().Elem(), unsafe.Pointer(rImage.Elem().UnsafeAddr())).Interface().(*proc.Image)
-			dwarfData := reflect.NewAt(rDwarf.Type().Elem(), unsafe.Pointer(rDwarf.Elem().UnsafeAddr())).Interface().(*dwarf.Data)
+			image := (*proc.Image)(unsafe.Pointer(rImage.Pointer()))
+			dwarfData := (*dwarf.Data)(unsafe.Pointer(rDwarf.Pointer()))
+
 			reader := image.DwarfReader()
 			reader.Seek(dwarf.Offset(rOffset.Uint()))
 			entry, err := reader.Next()
@@ -59,33 +89,4 @@ func (d *Dwarf) loadGlobals() {
 			d.globals[name] = reflect.NewAt(rtyp, unsafe.Pointer(uintptr(rAddr.Uint()))).Elem()
 		}
 	}
-}
-
-func (d *Dwarf) ForeachGlobal(f func(name string, v reflect.Value)) error {
-	if err := d.check(); err != nil {
-		return err
-	}
-	if d.globals == nil {
-		d.loadGlobals()
-	}
-
-	for name, v := range d.globals {
-		f(name, v)
-	}
-	return nil
-}
-
-func (d *Dwarf) FindGlobal(name string) (reflect.Value, error) {
-	if err := d.check(); err != nil {
-		return reflect.Value{}, err
-	}
-	if d.globals == nil {
-		d.loadGlobals()
-	}
-
-	v, ok := d.globals[name]
-	if !ok {
-		return reflect.Value{}, ErrNotFound
-	}
-	return v, nil
 }
